@@ -150,42 +150,6 @@ public class DeeplHelperUtility
         var glossaryEntries = new GlossaryEntries(entries);
         return glossaryEntries;
     }
-    /*
-    private string GetCellValue(WorkbookPart workbookPart, Cell currentcell)
-    {
-        string currentcellvalue = string.Empty;
-        if (currentcell.DataType != null)
-        {
-            if (currentcell.DataType == CellValues.SharedString)
-            {
-                int id = -1;
-
-                if (Int32.TryParse(currentcell.InnerText, out id))
-                {
-                    SharedStringItem item = GetSharedStringItemById(workbookPart, id);
-
-                    if (item.Text != null)
-                    {
-                        currentcellvalue = item.Text.Text;
-                    }
-                    else if (item.InnerText != null)
-                    {
-                        currentcellvalue = item.InnerText;
-                    }
-                    else if (item.InnerXml != null)
-                    {
-                        currentcellvalue = item.InnerXml;
-                    }
-                }
-            }
-        }
-        return currentcellvalue;
-    }
-    private SharedStringItem GetSharedStringItemById(WorkbookPart workbookPart, int id)
-    {
-        return workbookPart!.SharedStringTablePart!.SharedStringTable.Elements<SharedStringItem>().ElementAt(id);
-    }
-    */
 }
 
 public static class ExcelHelper

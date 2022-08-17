@@ -1,4 +1,5 @@
-﻿using DeeplHelper;
+﻿using DeepL.Model;
+using DeeplHelper;
 using System.IO;
 
 if (args.Length < 1)
@@ -28,18 +29,8 @@ while (true)
     switch (input.ToUpper())
     {
         case "C":
-            if (String.IsNullOrEmpty(filename))
-                filename = Console.ReadLine();
-            if (String.IsNullOrEmpty(filename))
-            {
-                Console.WriteLine("No file specified.");
+            if (!GetFilename(ref filename))
                 break;
-            }
-            if (!File.Exists(filename))
-            {
-                Console.WriteLine("File does not exist.");
-                break;
-            }
             var entries = utility.ReadGlossaryFromExcel(filename, true);
             var glossary = await utility.CreateGlossary(utility.DictionaryToGlossaryEntries(entries));
             if (glossary != null)
@@ -50,10 +41,11 @@ while (true)
             var result = await GetGlossaries((input.ToUpper() == "D") ? true : false);
             break;
         case "T":
-            if (String.IsNullOrEmpty(filename))
-                filename = Console.ReadLine();            
+            if (!GetFilename(ref filename))
+                break;
             Console.Write("Do you want to use an existing glossary for translation? (y/n) (Default: n): ");
             string? choice = Console.ReadLine();
+            GlossaryInfo selectedGlossary = null;
             if (choice != null)
             {
                 if (choice.ToUpper() == "Y")
@@ -65,9 +57,10 @@ while (true)
                     int.TryParse(inputGlossary, out selection);
                     if (selection == 0)
                         return;
-                    var selectedGlossary = result.ElementAt(selection - 1);
+                    selectedGlossary = result.ElementAt(selection - 1);
                 }
             }
+            await utility.TranslateExcelFile(filename, selectedGlossary, true);
             break;
     }
     input = null;
@@ -83,6 +76,22 @@ void PrintMenu()
     Console.WriteLine("  [T] Translate Excel");
     Console.WriteLine("==================================");
     Console.WriteLine("");
+}
+bool GetFilename(ref string? filename)
+{
+    if (String.IsNullOrEmpty(filename))
+        filename = Console.ReadLine();
+    if (String.IsNullOrEmpty(filename))
+    {
+        Console.WriteLine("No file specified.");
+        return false;
+    }
+    if (!File.Exists(filename))
+    {
+        Console.WriteLine("File does not exist.");
+        return false;
+    }
+    return true;
 }
 async Task<DeepL.Model.GlossaryInfo[]> GetGlossaries(bool forDeletion = false, bool skipDetails = false)
 {
