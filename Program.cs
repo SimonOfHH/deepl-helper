@@ -2,23 +2,10 @@
 using DeeplHelper;
 using System.IO;
 
-if (args.Length < 1)
-{
-    Console.WriteLine("You need to provide your DeepL API-Key");
-    Console.ReadLine();
-    return;
-}
-string? authKey = args[0];
+string authKey = String.Empty;
 string? input = String.Empty;
 string? filename = String.Empty;
-if ((args.Length >= 2) && (args[1] != null) && (!String.IsNullOrEmpty(args[1].Trim())))
-{
-    input = args[1];
-}
-if ((args.Length >= 3) && (args[2] != null) && (!String.IsNullOrEmpty(args[2].Trim())))
-{
-    filename = args[2];
-}
+ProcessArgs(args, ref authKey, ref input, ref filename);
 var utility = new DeeplHelperUtility(authKey);
 while (true)
 {
@@ -66,6 +53,32 @@ while (true)
     input = null;
 }
 
+void ProcessArgs(string[] args, ref string authKey, ref string input, ref string filename)
+{
+    if (args.Length < 1)
+    {
+        Console.WriteLine("You need to provide your DeepL API-Key");
+        Console.ReadLine();
+        return;
+    }
+    if ((args[0].Trim() == "<DeepL API Key>") || (String.IsNullOrEmpty(args[0])))
+    {
+        Console.WriteLine("You need to provide your DeepL API-Key");
+        Console.ReadLine();
+        return;
+    }
+    authKey = args[0];
+    input = String.Empty;
+    filename = String.Empty;
+    if ((args.Length >= 2) && (args[1] != null) && (!String.IsNullOrEmpty(args[1].Trim())) && (args[1].Trim() != "<Input Selection[optional]>"))
+    {
+        input = args[1];
+    }
+    if ((args.Length >= 3) && (args[2] != null) && (!String.IsNullOrEmpty(args[2].Trim())) && (args[2].Trim() != "<Filename[optional]>"))
+    {
+        filename = args[2];
+    }
+}
 void PrintMenu()
 {
     Console.WriteLine("==================================");
