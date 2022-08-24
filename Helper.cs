@@ -117,13 +117,13 @@ public class DeeplHelperUtility
         return entries;
     }
 
-    public async Task TranslateExcelFile(string filename, GlossaryInfo? glossaryInfo, bool skipHeader = false, string sourceLanguage = "en", string targetLanguage = "de", int columnToTranslate = 0, int resultColumn = 3)
+    public async Task TranslateExcelFile(string filename, GlossaryInfo? glossaryInfo, bool skipHeader = false, int columnToTranslate = 0, int resultColumn = 3, int numberOfBatchValues = 1, string sourceLanguage = "en", string targetLanguage = "de")
     {
         var textTranslateOptions = new TextTranslateOptions();
         if (targetLanguage == "de") textTranslateOptions.Formality = Formality.More;
         if (glossaryInfo != null) textTranslateOptions.GlossaryId = glossaryInfo.GlossaryId;
 
-        var entries = new Dictionary<string, string>();
+        var knownTranslations = new Dictionary<string, string>();
         using (var spreadsheetDocument = SpreadsheetDocument.Open(filename, true))
         {
             var workbookPart = spreadsheetDocument.WorkbookPart;
@@ -131,24 +131,97 @@ public class DeeplHelperUtility
                 return;
             WorksheetPart worksheetPart = workbookPart.WorksheetParts.First();
             SheetData sheetData = worksheetPart.Worksheet.Elements<SheetData>().First();
+            var translateEntries = new Dictionary<Row, Tuple<string, TextResult>>();
             foreach (Row r in sheetData.Elements<Row>().Skip((skipHeader ? 1 : 0)))
             {
-                (int currentPositionleft, int currentPositionTop) = Console.GetCursorPosition();
-                Console.Write(String.Format("Processing row {0} / {1}", r.RowIndex, sheetData.Elements<Row>().Count()));
-                Console.SetCursorPosition(currentPositionleft, currentPositionTop);
-
-                string valueToTranslate = ExcelHelper.GetCellValue(workbookPart, (Cell)r.ElementAt(columnToTranslate));
-                DeepL.Model.TextResult result = await translator.TranslateTextAsync(valueToTranslate, sourceLanguage, targetLanguage, textTranslateOptions);
-                int index = ExcelHelper.InsertSharedStringItem(spreadsheetDocument, result.Text);
-                ExcelHelper.InsertCellInWorksheet("C", r.RowIndex, worksheetPart, index.ToString());
+                PrintConsoleProgress(r.RowIndex, sheetData.Elements<Row>().Count());
+                if (translateEntries.Count == numberOfBatchValues)
+                {
+                    ProcessTranslationEntries(ref translateEntries, ref knownTranslations, spreadsheetDocument, worksheetPart, sourceLanguage, targetLanguage, textTranslateOptions, resultColumn);
+                    translateEntries = new Dictionary<Row, Tuple<string, TextResult>>();
+                    AddCurrentValueToTranslateEntries(ref translateEntries, ref knownTranslations, workbookPart, r, columnToTranslate, sourceLanguage);
+                }
+                else
+                {
+                    AddCurrentValueToTranslateEntries(ref translateEntries, ref knownTranslations, workbookPart, r, columnToTranslate, sourceLanguage);
+                }
             }
+            ProcessTranslationEntries(ref translateEntries, ref knownTranslations, spreadsheetDocument, worksheetPart, sourceLanguage, targetLanguage, textTranslateOptions, resultColumn);
+            spreadsheetDocument.Save();
         }
     }
-
+    private void AddCurrentValueToTranslateEntries(ref Dictionary<Row, Tuple<string, TextResult>> translateEntries, ref Dictionary<string, string> knownTranslations, WorkbookPart workbookPart, Row r, int columnToTranslate, string sourceLanguage)
+    {
+        string columnName = Convert.ToChar(columnToTranslate + 65).ToString();
+        string cellReference = columnName + r.RowIndex.ToString();
+        var cell = r.Elements<Cell>().First(c => c.CellReference == cellReference);
+        string valueToTranslate = ExcelHelper.GetCellValue(workbookPart, cell);
+        TextResult resultHelper = null;
+        if (knownTranslations.ContainsKey(valueToTranslate))
+            resultHelper = new TextResult(knownTranslations[valueToTranslate], sourceLanguage);
+        translateEntries.Add(r, new Tuple<string, TextResult>(valueToTranslate, resultHelper));
+    }
+    private void ProcessTranslationEntries(ref Dictionary<Row, Tuple<string, TextResult>> translateEntries, ref Dictionary<string, string> knownTranslations, SpreadsheetDocument spreadsheetDocument, WorksheetPart worksheetPart, string sourceLanguage, string targetLanguage, TextTranslateOptions textTranslateOptions, int resultColumn)
+    {
+        if (translateEntries == null)
+            return;
+        if (translateEntries.Count() == 0)
+            return;
+        var valuesToTranslate = DictionaryToList(knownTranslations, translateEntries);
+        TextResult[] results;
+        if (valuesToTranslate.Count() != 0)
+        {
+            results = translator.TranslateTextAsync(valuesToTranslate, sourceLanguage, targetLanguage, textTranslateOptions).Result;
+            UpdateKnownTranslations(ref knownTranslations, valuesToTranslate, results);
+        }
+        translateEntries = MatchTextResultsWithDictionary(translateEntries, knownTranslations);
+        foreach (var translateEntry in translateEntries)
+        {
+            if (!knownTranslations.ContainsKey(translateEntry.Value.Item1))
+            {
+                knownTranslations.Add(translateEntry.Value.Item1, translateEntry.Value.Item2.Text);
+            }
+            int index = ExcelHelper.InsertSharedStringItem(spreadsheetDocument, knownTranslations[translateEntry.Value.Item1]);
+            ExcelHelper.InsertCellInWorksheet(resultColumn, translateEntry.Key.RowIndex, worksheetPart, index.ToString());
+        }
+    }
+    private void UpdateKnownTranslations(ref Dictionary<string, string> knownTranslations, List<string> valuesToTranslate, TextResult[] results)
+    {
+        for (int i = 0; i < valuesToTranslate.Count(); i++)
+        {
+            if (!knownTranslations.ContainsKey(valuesToTranslate[i]))
+                knownTranslations.Add(valuesToTranslate[i], results[i].Text);
+        }
+    }
+    private void PrintConsoleProgress(DocumentFormat.OpenXml.UInt32Value index, int total)
+    {
+        (int currentPositionleft, int currentPositionTop) = Console.GetCursorPosition();
+        Console.Write(String.Format("Processing row {0} / {1}", index, total));
+        Console.SetCursorPosition(currentPositionleft, currentPositionTop);
+    }
     public GlossaryEntries DictionaryToGlossaryEntries(Dictionary<string, string> entries)
     {
         var glossaryEntries = new GlossaryEntries(entries);
         return glossaryEntries;
+    }
+    private List<string> DictionaryToList(Dictionary<string, string> knownTranslations, Dictionary<Row, Tuple<string, TextResult>> entries)
+    {
+        var translations = new List<string>();
+        foreach (var entry in entries)
+        {
+            if (!knownTranslations.ContainsKey(entry.Value.Item1))
+                translations.Add(entry.Value.Item1);
+        }
+        return translations;
+    }
+    private Dictionary<Row, Tuple<string, TextResult>> MatchTextResultsWithDictionary(Dictionary<Row, Tuple<string, TextResult>> entries, Dictionary<string, string> knownTranslations)
+    {
+        var newEntries = new Dictionary<Row, Tuple<string, TextResult>>();
+        for (int i = 0; i < entries.Count(); i++)
+        {
+            newEntries.Add(entries.ElementAt(i).Key, new Tuple<string, TextResult>(entries.ElementAt(i).Value.Item1, new TextResult(knownTranslations[entries.ElementAt(i).Value.Item1], "")));
+        }
+        return newEntries;
     }
 }
 
@@ -226,7 +299,7 @@ public static class ExcelHelper
 
         // The text does not exist in the part. Create the SharedStringItem and return its index.
         shareStringPart.SharedStringTable.AppendChild(new SharedStringItem(new DocumentFormat.OpenXml.Spreadsheet.Text(text)));
-        shareStringPart.SharedStringTable.Save();
+        //shareStringPart.SharedStringTable.Save();
 
         return i;
     }
@@ -259,6 +332,11 @@ public static class ExcelHelper
     }
     // Given a column name, a row index, and a WorksheetPart, inserts a cell into the worksheet. 
     // If the cell already exists, returns it. 
+    public static Cell InsertCellInWorksheet(int column, uint rowIndex, WorksheetPart worksheetPart, string sharedStringIndex)
+    {
+        string columnName = Convert.ToChar(column + 65).ToString();
+        return InsertCellInWorksheet(columnName, rowIndex, worksheetPart, sharedStringIndex);
+    }
     public static Cell InsertCellInWorksheet(string columnName, uint rowIndex, WorksheetPart worksheetPart, string sharedStringIndex)
     {
         Worksheet worksheet = worksheetPart.Worksheet;
@@ -302,7 +380,7 @@ public static class ExcelHelper
             newCell.CellValue = new CellValue(sharedStringIndex);
             newCell.DataType = new EnumValue<CellValues>(CellValues.SharedString);
 
-            worksheet.Save();
+            //worksheet.Save();
             return newCell;
         }
     }

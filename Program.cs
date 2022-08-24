@@ -7,6 +7,7 @@ string? input = String.Empty;
 string? filename = String.Empty;
 ProcessArgs(args, ref authKey, ref input, ref filename);
 var utility = new DeeplHelperUtility(authKey);
+
 while (true)
 {
     PrintMenu();
@@ -47,7 +48,8 @@ while (true)
                     selectedGlossary = result.ElementAt(selection - 1);
                 }
             }
-            await utility.TranslateExcelFile(filename, selectedGlossary, true);
+            // TODO: Make more generic/parameters based on input and not hardcoded column values?
+            await utility.TranslateExcelFile(filename, selectedGlossary, true, 4, 10, 5);
             break;
     }
     input = null;
